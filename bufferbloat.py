@@ -89,28 +89,19 @@ class BBTopo(Topo):
 # contribute neatly written (using classes) monitoring scripts for
 # Mininet!
 
-def start_video_server(net):
-    h1 = net.get('h1')
-    print("Starting video server on h1...")
-    return h1.popen("python video_server.py")  # Supondo que o arquivo de servidor esteja em video_server.py
+def start_quic(net):
+    h1 = net.get("h1")
+    h2 = net.get("h2")
+    print("Iniciando servidor QUIC")
 
-def start_video_client(net):
-    h2 = net.get('h2')
-    print("Starting video client on h2...")
-    server_ip = net.get('h1').IP()
-    return h2.popen(f"python video_client.py --host {server_ip} --port 12345 --output received_video.mp4")
+    server = h2.popen("./quiche_server --port 4433")
 
+    print("Iniciando cliente QUIC")
 
-def start_quic_server(net):
-    h1 = net.get('h1')
-    print("Starting QUIC server on h1...")
-    return h1.popen("./quic_server --port 443")
+    server_ip = h1.IP()
+    client = h1.popen(f"./quic_client --host {server_ip} --port 443 --duration {args.time}")
 
-def start_quic_client(net):
-    h2 = net.get('h2')
-    print("Starting QUIC client on h2...")
-    server_ip = net.get('h1').IP()
-    return h2.popen(f"./quic_client --host {server_ip} --port 443 --duration {args.time}")
+    return server, client
 
 def start_iperf(net):
     h1 = net.get('h1')
@@ -195,8 +186,14 @@ def fetch_complex_webpage(net, repetitions=3, interval=5):
 
     files = [
         "image1.jpg",
+        "image2.jpg",
+        "image3.jpg",
+        "image4.jpg",
+        "image5.jpg",
+        "image6.jpg",
         "script1.js",
-        "video1.mp4",
+        # "video1.mp4",
+        "index.html"
     ]
 
     for _ in range(repetitions):
@@ -205,8 +202,6 @@ def fetch_complex_webpage(net, repetitions=3, interval=5):
         # Realizar requisicoes para diferentes arquivos em ./content
         for file in files:
             result = h2.cmd("curl -o /dev/null -s -w %%{time_total} http://%s/%s"%(h1_ip, file))
-            print(f"result: {result}")
-            print(f"result type: {type(result)}")
             fetch_time = float(result)
             times.append(fetch_time)
             print(f"Tempo de fetch do arquivo: {file}: {fetch_time} seconds")
@@ -246,16 +241,13 @@ def bufferbloat():
     qmon = start_qmon(iface='s0-eth2',
                       outfile='%s/q.txt' % (args.dir))
 
-    # TODO: Start iperf, webservers, etc.
-    iperf_server, iperf_client = start_iperf(net)
 
-    # if args.protocol == 'quic':
-    #     server = start_quic_server(net)
-    #     client = start_quic_client(net)
-    # else:
-    #     # server, client = start_tcp_traffic(net)
-    #     server = start_video_server(net)  # Inicia o servidor de vídeo
-    #     client = start_video_client(net)  # Inicia o cliente de vídeo
+    if args.protocol == 'quic':
+        quic_server, quic_client = start_quic(net)
+    else:
+        iperf_server, iperf_client = start_iperf(net)
+        # server = start_video_server(net)  # Inicia o servidor de vídeo
+        # client = start_video_client(net)  # Inicia o cliente de vídeo
 
     # TODO: measure the time it takes to complete webpage transfer
     # from h1 to h2 (say) 3 times.  Hint: check what the following
@@ -297,8 +289,12 @@ def bufferbloat():
     # debug.  It allows you to run arbitrary commands inside your
     # emulated hosts h1 and h2.
     # CLI(net)
-    iperf_server.terminate()
-    iperf_client.terminate()
+    if args.protocol == 'quic':
+        quic_server.terminate()
+        quic_client.terminate()
+    else:
+        iperf_server.terminate()
+        iperf_client.terminate()
     ping_proc.terminate()
     web_server_proc.terminate()
 
